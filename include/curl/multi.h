@@ -192,6 +192,10 @@ CURL_EXTERN CURLMcode curl_multi_wait(CURLM *multi_handle,
 CURL_EXTERN CURLMcode curl_multi_perform(CURLM *multi_handle,
                                          int *running_handles);
 
+CURL_EXTERN CURLMcode curl_multi_perform1(CURLM *multi_handle,
+                                         int *running_handles,
+                                         char *conn_ip_addr);
+
  /*
   * Name:    curl_multi_cleanup()
   *

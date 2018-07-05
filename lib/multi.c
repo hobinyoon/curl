@@ -104,6 +104,9 @@ static const char * const statename[]={
 };
 #endif
 
+#define _printf(FMT, ARGS...) \
+  printf("[%s %s %d] "FMT"\n", __FILE__, __func__, __LINE__, ##ARGS)
+
 /* function pointer called once when switching TO a state */
 typedef void (*init_multistate_func)(struct Curl_easy *data);
 
@@ -2158,7 +2161,6 @@ static CURLMcode multi_runsingle(struct Curl_multi *multi,
   return rc;
 }
 
-
 CURLMcode curl_multi_perform(struct Curl_multi *multi, int *running_handles)
 {
   struct Curl_easy *data;
@@ -2179,6 +2181,75 @@ CURLMcode curl_multi_perform(struct Curl_multi *multi, int *running_handles)
 
     sigpipe_ignore(data, &pipe_st);
     result = multi_runsingle(multi, now, data);
+    sigpipe_restore(&pipe_st);
+
+    if(result)
+      returncode = result;
+
+    data = data->next; /* operate on next handle */
+  }
+
+  /*
+   * Simply remove all expired timers from the splay since handles are dealt
+   * with unconditionally by this function and curl_multi_timeout() requires
+   * that already passed/handled expire times are removed from the splay.
+   *
+   * It is important that the 'now' value is set at the entry of this function
+   * and not for the current time as it may have ticked a little while since
+   * then and then we risk this loop to remove timers that actually have not
+   * been handled!
+   */
+  do {
+    multi->timetree = Curl_splaygetbest(now, multi->timetree, &t);
+    if(t)
+      /* the removed may have another timeout in queue */
+      (void)add_next_timeout(now, multi, t->payload);
+
+  } while(t);
+
+  *running_handles = multi->num_alive;
+
+  if(CURLM_OK >= returncode)
+    update_timer(multi);
+
+  return returncode;
+}
+
+CURLMcode curl_multi_perform1(struct Curl_multi *multi, int *running_handles,
+    char *conn_ip_addr)
+{
+  struct Curl_easy *data;
+  CURLMcode returncode = CURLM_OK;
+  struct Curl_tree *t;
+  struct curltime now = Curl_now();
+
+  if(!GOOD_MULTI_HANDLE(multi))
+    return CURLM_BAD_HANDLE;
+
+  if(multi->in_callback)
+    return CURLM_RECURSIVE_API_CALL;
+
+  data = multi->easyp;
+  while(data) {
+    CURLMcode result;
+    SIGPIPE_VARIABLE(pipe_st);
+
+    sigpipe_ignore(data, &pipe_st);
+    result = multi_runsingle(multi, now, data);
+
+    if(conn_ip_addr && data->easy_conn && data->easy_conn->ip_addr_str) {
+      if(0 < strlen(conn_ip_addr)) {
+        if(strcmp(conn_ip_addr, data->easy_conn->ip_addr_str) != 0) {
+          _printf("Interesting. conn_ip_addr=[%s]"
+              " data->easy_conn->ip_addr_str=[%s]",
+              conn_ip_addr, data->easy_conn->ip_addr_str);
+        }
+      }
+      else{
+        strcpy(conn_ip_addr, data->easy_conn->ip_addr_str);
+      }
+    }
+
     sigpipe_restore(&pipe_st);
 
     if(result)

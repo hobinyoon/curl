@@ -28,6 +28,7 @@ extern "C" {
 CURL_EXTERN CURL *curl_easy_init(void);
 CURL_EXTERN CURLcode curl_easy_setopt(CURL *curl, CURLoption option, ...);
 CURL_EXTERN CURLcode curl_easy_perform(CURL *curl);
+CURL_EXTERN CURLcode curl_easy_perform1(CURL *curl, char *conn_ip_addr);
 CURL_EXTERN void curl_easy_cleanup(CURL *curl);
 
 /*

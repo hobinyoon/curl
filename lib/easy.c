@@ -81,6 +81,17 @@
 #include "curl_memory.h"
 #include "memdebug.h"
 
+/* This generates warning but works */
+#define _printf(FMT, ARGS...) \
+  printf("[%s %s %d] "FMT"\n", __FILE__, __func__, __LINE__, ##ARGS)
+
+/*
+ * This makes an error with _printf("") since __VA_ARGS__ doesn't evaluate to
+ * anything
+#define _printf(FMT, ...) \
+printf("[%s %s %d] "FMT"\n", __FILE__, __func__, __LINE__, __VA_ARGS__)
+*/
+
 void Curl_version_init(void);
 
 /* win32_cleanup() is for win32 socket cleanup functionality, the opposite
@@ -656,7 +667,7 @@ static CURLcode easy_events(struct Curl_multi *multi)
 #define easy_events(x) CURLE_NOT_BUILT_IN
 #endif
 
-static CURLcode easy_transfer(struct Curl_multi *multi)
+static CURLcode easy_transfer(struct Curl_multi *multi, char *conn_ip_addr)
 {
   bool done = FALSE;
   CURLMcode mcode = CURLM_OK;
@@ -683,7 +694,7 @@ static CURLcode easy_transfer(struct Curl_multi *multi)
         }
       }
 
-      mcode = curl_multi_perform(multi, &still_running);
+      mcode = curl_multi_perform1(multi, &still_running, conn_ip_addr);
     }
 
     /* only read 'still_running' if curl_multi_perform() return OK */
@@ -725,7 +736,8 @@ static CURLcode easy_transfer(struct Curl_multi *multi)
  * DEBUG: if 'events' is set TRUE, this function will use a replacement engine
  * instead of curl_multi_perform() and use curl_multi_socket_action().
  */
-static CURLcode easy_perform(struct Curl_easy *data, bool events)
+static CURLcode easy_perform(struct Curl_easy *data, bool events,
+    char *conn_ip_addr)
 {
   struct Curl_multi *multi;
   CURLMcode mcode;
@@ -776,7 +788,7 @@ static CURLcode easy_perform(struct Curl_easy *data, bool events)
   data->multi = multi;
 
   /* run the transfer */
-  result = events ? easy_events(multi) : easy_transfer(multi);
+  result = events ? easy_events(multi) : easy_transfer(multi, conn_ip_addr);
 
   /* ignoring the return code isn't nice, but atm we can't really handle
      a failure here, room for future improvement! */
@@ -795,7 +807,13 @@ static CURLcode easy_perform(struct Curl_easy *data, bool events)
  */
 CURLcode curl_easy_perform(struct Curl_easy *data)
 {
-  return easy_perform(data, FALSE);
+  char *conn_ip_addr = NULL;
+  return easy_perform(data, FALSE, conn_ip_addr);
+}
+
+CURLcode curl_easy_perform1(struct Curl_easy *data, char *conn_ip_addr)
+{
+  return easy_perform(data, FALSE, conn_ip_addr);
 }
 
 #ifdef CURLDEBUG
@@ -805,7 +823,8 @@ CURLcode curl_easy_perform(struct Curl_easy *data)
  */
 CURLcode curl_easy_perform_ev(struct Curl_easy *data)
 {
-  return easy_perform(data, TRUE);
+  char *conn_ip_addr = NULL;
+  return easy_perform(data, TRUE, conn_ip_addr);
 }
 
 #endif

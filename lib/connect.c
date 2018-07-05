@@ -105,6 +105,12 @@ struct tcp_keepalive {
 };
 #endif
 
+#include <execinfo.h>
+
+#define _printf(FMT, ARGS...) \
+  printf("[%s %s %d] "FMT"\n", __FILE__, __func__, __LINE__, ##ARGS)
+
+
 static void
 tcpkeepalive(struct Curl_easy *data,
              curl_socket_t sockfd)
@@ -669,6 +675,19 @@ bool Curl_getaddressinfo(struct sockaddr *sa, char *addr,
   return FALSE;
 }
 
+void StackTrace(int skip_innermost_stack)
+{
+  const int max_bufs = 32;
+  void *buf[max_bufs];
+  int buf_size = backtrace(buf, max_bufs);
+
+  char **messages = backtrace_symbols(buf, buf_size);
+  for(int i = skip_innermost_stack; i < buf_size; ++ i) {
+    printf(messages[i]);
+    printf("\n");
+  }
+}
+
 /* retrieves the start/end point information of a socket of an established
    connection */
 void Curl_updateconninfo(struct connectdata *conn, curl_socket_t sockfd)
@@ -707,6 +726,29 @@ void Curl_updateconninfo(struct connectdata *conn, curl_socket_t sockfd)
       return;
     }
     memcpy(conn->ip_addr_str, conn->primary_ip, MAX_IPADR_LEN);
+    /*
+    _printf("conn->ip_addr_str=[%s]", conn->ip_addr_str);
+    StackTrace(1);
+
+    $ addr2line -e get-server-ip 0x497f0e
+      curl/lib/connect.c:735                Curl_updateconninfo
+    $ addr2line -e get-server-ip 0x4983e2
+      curl/lib/connect.c:844                Curl_is_connected
+    $ addr2line -e get-server-ip 0x49c0a7
+      curl/lib/multi.c:1592                 multi_runsingle
+    $ addr2line -e get-server-ip 0x49d4cf
+      curl/lib/multi.c:2188                 curl_multi_perform
+    $ addr2line -e get-server-ip 0x494e2d
+      curl/lib/easy.c:699                   easy_transfer
+    $ addr2line -e get-server-ip 0x495090
+      curl/lib/easy.c:796 (discriminator 4) easy_perform
+    $ addr2line -e get-server-ip 0x4950c8
+      curl/lib/easy.c:816                   curl_easy_perform
+    $ addr2line -e get-server-ip 0x491e28
+      ??:?
+    $ addr2line -e get-server-ip 0x464f19
+      ??:?
+    */
 
     if(!Curl_getaddressinfo((struct sockaddr*)&ssloc,
                             conn->local_ip, &conn->local_port)) {
